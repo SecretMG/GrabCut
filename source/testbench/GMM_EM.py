@@ -152,7 +152,7 @@ def main():
     pts_hat = [300, 600, 900]
     k = 3
     gmm = GMM(mu_hat, sigma_hat, pts_hat, k)
-    gmm.learn(k=3, num_epoch=100)
+    gmm.learn(k=3, num_epoch=1000)
 
 
 if __name__ == '__main__':

@@ -3,7 +3,7 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument(
     '--source', '-s',
-    default='imgs/messi.jpg',
+    default='imgs/human.jpg',
     help='使用的图片'
 )
 parser.add_argument(
@@ -18,7 +18,7 @@ parser.add_argument(
 )
 parser.add_argument(
     '--gamma', '-g',
-    default=50,
+    default=5,
     help='边权Region和Boarder的平衡因子'
 )
 parser.add_argument(
@@ -29,7 +29,7 @@ parser.add_argument(
 )
 parser.add_argument(
     '-num_epoch', '-ne',
-    default=1,
+    default=5,
     help='进行全部流程的次数'
 )
 parser.add_argument(

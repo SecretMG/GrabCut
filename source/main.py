@@ -108,9 +108,9 @@ class drawer:
         for epoch in range(args.num_epoch):
             print(f'开始第{epoch + 1}/{args.num_epoch}轮GrabCut')
             graph.learn_GMM()
-            # self.output = graph.test_GMM(self.input, self.left_top, self.right_bottom)
+            # self.output = graph.test_GMM(self.left_top, self.right_bottom).astype(np.uint8)
             graph.build(self.left_top, self.right_bottom)
-            self.output = graph.predict()
+            self.output = graph.predict().astype(np.uint8)  # 转换回图片形式
             cv.imshow(f'output{epoch+1}', self.output)
         print('等待下一步操作')
 

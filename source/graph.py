@@ -1,5 +1,6 @@
 import numpy as np
 from tqdm import tqdm
+from time import time
 
 from GMM import GMM
 from Dinic import Dinic
@@ -7,14 +8,14 @@ from utils.args import args
 
 class GCGraph:
     def __init__(self, input, left_top, right_bottom, fore, back):
-        self.input = input
+        self.input = input.astype(int)  # 破除像素值限制
         self.ord2id = {}
         self.id2ord = []
         for i in range(input.shape[0]):
             for j in range(input.shape[1]):
                 self.ord2id[(i, j)] = i * input.shape[1] + j
                 self.id2ord.append((i, j))
-        self.foreground = []    # 存的是idx
+        self.foreground = []    # 存的是idx，记录求出的点集
         self.background = []
 
         # 将矩形框初始化为前景
@@ -52,7 +53,7 @@ class GCGraph:
         for i in range(self.input.shape[0]):
             for j in range(self.input.shape[1]):
                 x[i*self.input.shape[1] + j] = self.input[i][j]
-        ans = self.input.copy()
+        ans = self.input
         p_fore = self.fore_model.predict(x)
         p_back = self.back_model.predict(x)
         for i in range(ans.shape[0]):
@@ -66,6 +67,7 @@ class GCGraph:
 
     def build(self, left_top, right_bottom):
         points, edges = [], []
+        print('建图')
         '--- 建立点集'
         points.append(self.input.shape[0] * self.input.shape[1])      # 前景点
         points.append(self.input.shape[0] * self.input.shape[1] + 1)  # 后景点
@@ -73,16 +75,31 @@ class GCGraph:
             for j in range(left_top[1], right_bottom[1]):
                 points.append(self.ord2id[(i, j)])
         '--- 建立边集'
-        if args.n_ways == 8:
+        if args.n_ways == 4:
             neighbor = [
                 (1, 0), (0, 1)
             ]
-        else:
+        elif args.n_ways == 8:
             neighbor = [
                 (1, 0), (0, 1), (1, 1), (1, -1)
-            ]
-        # 因为是无向边，每个点只扩展一半的邻居即可
-        print('建图')
+            ]   # 因为是无向边，每个点只扩展一半的邻居即可
+        # 先计算diff的期望，用于在公式中使用
+        mean_of_diff, cnt = 0, 0
+        for i in range(left_top[0], right_bottom[0]):
+            for j in range(left_top[1], right_bottom[1]):
+                me = (i, j)
+                for nb in neighbor:
+                    nxt = (me[0] + nb[0], me[1] + nb[1])
+                    if nxt[0] in range(left_top[0], right_bottom[0]) and nxt[1] in range(left_top[1], right_bottom[1]):
+                        mean_of_diff += np.sum(
+                            (self.input[me] - self.input[nxt]) * (self.input[me] - self.input[nxt])
+                        )
+                        cnt += 1
+        mean_of_diff /= cnt     # 求期望
+        mean_of_diff *= 2
+        mean_of_diff = 1 / mean_of_diff
+
+        # 逐点计算各边权重
         for i in tqdm(range(left_top[0], right_bottom[0])):
             for j in range(left_top[1], right_bottom[1]):
                 me = (i, j)
@@ -92,16 +109,15 @@ class GCGraph:
                     dist = np.sqrt(nb[0] * nb[0] + nb[1] * nb[1])
                     if nxt[0] in range(left_top[0], right_bottom[0]) and nxt[1] in range(left_top[1], right_bottom[1]):
                         # 由于图片数据的非负性，需要手动操作
-                        bigger = np.max((self.input[me], self.input[nxt]), axis=0)
-                        smaller = np.min((self.input[me], self.input[nxt]), axis=0)
-                        w = 0 - np.sum(bigger - smaller)    # 注意像素是无符号数
-                        w = max(-10, w)     # 截断
-                        # todo:论文中使用图片的高斯分布，目前简化成欧式距离
+                        w = np.sum(
+                            (self.input[me] - self.input[nxt]) * (self.input[me] - self.input[nxt])
+                        )
+                        w *= - mean_of_diff
                         edges.append(
                             (
                                 self.ord2id[me],
                                 self.ord2id[nxt],
-                                args.gamma * (1 / dist) * np.exp(w),
+                                int(args.gamma * (1 / dist) * np.exp(w)),
                             )
                         )
                 # 其次计算区域项
@@ -112,41 +128,44 @@ class GCGraph:
                     p_back = args.maxValidFloat
                     p_fore = 0
                 else:
-                    p_fore = self.fore_model.predict(self.input[me].reshape(-1, self.input.shape[-1]))[0]
-                    p_back = self.back_model.predict(self.input[me].reshape(-1, self.input.shape[-1]))[0]
-                    p_fore = np.log(p_fore) + 20
-                    p_back = np.log(p_back) + 20
+                    pdf_fore = self.fore_model.predict(self.input[me].reshape(-1, self.input.shape[-1]))[0]
+                    pdf_back = self.back_model.predict(self.input[me].reshape(-1, self.input.shape[-1]))[0]
+                    p_fore = - np.log(pdf_back)
+                    p_back = - np.log(pdf_fore)
 
                 edges.append(
                     (
                         self.input.shape[0] * self.input.shape[1],
                         self.ord2id[me],
-                        p_fore
+                        int(p_fore)
                     )
                 )
                 edges.append(
                     (
                         self.input.shape[0] * self.input.shape[1] + 1,
                         self.ord2id[me],
-                        p_back
+                        int(p_back)
                     )
                 )
-                # print('a', args.gamma * (1 / dist) * np.exp(w))
-                # print('b', p_fore, p_back)
         cutter = Dinic(points, edges, self.input.shape[0] * self.input.shape[1] + 2)
         print('网络流计算中...')
+        pre = time()
         cutter.solve(self.input.shape[0] * self.input.shape[1], self.input.shape[0] * self.input.shape[1] + 1)
+        print(f'网络流计算完成，spending time={int(time() - pre)}s')
         self.foreground = cutter.get_foreground(self.input.shape[0] * self.input.shape[1])    # 用于下一轮迭代
         self.background = cutter.get_background(self.input.shape[0] * self.input.shape[1] + 1)
 
     def predict(self):
+        print('像素分类中...')
+        pre = time()
         ans = np.zeros_like(self.input)
         for i in range(self.input.shape[0]):
             for j in range(self.input.shape[1]):
                 if self.ord2id[(i, j)] in self.foreground:
-                    ans[i][j][:] = self.input[i][j][:]
+                    ans[i][j] = self.input[i][j]
                 else:
                     ans[i][j] = (255, 255, 255)
+        print(f'像素分类完成，spending time={int(time() - pre)}s')
         return ans
 
     def set_foreground(self, fore):

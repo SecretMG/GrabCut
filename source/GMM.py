@@ -58,8 +58,8 @@ class GMM:
         '''
         k: num of component models
         '''
-        mu = np.random.randint(100, 110, (k, self.x.shape[-1]))
-        sigma = np.random.randint(70, 80, (k, self.x.shape[-1], self.x.shape[-1]))
+        mu = np.random.randint(100, 200, (k, self.x.shape[-1]))
+        sigma = np.random.randint(70, 1000, (k, self.x.shape[-1], self.x.shape[-1]))
         w = np.ones((self.pts, k)) / k     # w[i][j]代表第i个样本点属于第j个分量模型的概率，初始为等概率
         pi = np.sum(w, axis=0) / np.sum(w)      # p[j]代表选择第j个分量模型的概率，初始为等概率
         llh_ls = []
@@ -72,6 +72,7 @@ class GMM:
             pi = self.update_pi(k, w)
             mu = self.update_mu(k, w)
             sigma = self.update_sigma(k, w, mu)
+
         self.k, self.w, self.pi, self.mu, self.sigma = k, w, pi, mu, sigma
         print('模型已收敛')
 
@@ -83,6 +84,5 @@ class GMM:
                 self.mu[j],
                 np.diag([self.sigma[j, _, _] for _ in range(self.sigma.shape[-1])])
             )
+        # 注意这个pdfs不是单独某个分量模型的pdf，而是整个模型带有pi的pdf
         return pdfs.max(axis=1)
-
-
