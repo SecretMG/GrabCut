@@ -1,6 +1,6 @@
 ## Abstract
 
-- Using "GrabCut" technique.
+- Implementation of "GrabCut" technique.
 
 ## Keyword
 
